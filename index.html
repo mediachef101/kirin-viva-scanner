@@ -411,15 +411,30 @@ function checkDigitOk(d) {
 }
 
 let lastCode = '', lastAt = 0;
+let cameraResultShown = false, lastSeenAt = 0;
+const LOST_MS = 1200;  // カメラの判定結果は、バーコードが見えなくなってこの時間で消す
+
+function clearResult() {
+  const box = $('result');
+  box.className = 'result';
+  box.innerHTML = '';
+  for (const [cls, txt] of [['verdict', '—'], ['name', 'バーコードを赤い線に合わせてください']]) {
+    const el = document.createElement('div'); el.className = cls; el.textContent = txt; box.appendChild(el);
+  }
+  cameraResultShown = false;
+  lastCode = '';
+}
 const history = [];
 function judge(raw, source) {
   const code = normalize(raw);
   const now = Date.now();
-  if (source === 'camera' && code === lastCode && now - lastAt < 2500) return;
+  // 同じバーコードを映し続けている間は、表示も履歴も更新しない
+  if (source === 'camera' && code === lastCode && cameraResultShown) return;
   lastCode = code; lastAt = now;
 
   const box = $('result');
   const name = ITEMS[code];
+  cameraResultShown = source === 'camera';
   box.className = 'result';
   void box.offsetWidth;
   let verdict, label, note = '';
@@ -594,7 +609,8 @@ async function scanLoop() {
         diag.frames++; diag.found += res.length;
         if (res.length) diag.last = res.map(r => `${r.format}:${r.text}:${r.isValid ? 'OK' : 'NG'}${r.error ? ':' + r.error : ''}`).join(' / ');
         const hit = res.find(r => r.isValid && r.text);
-        if (hit) judge(hit.text, 'camera');
+        if (hit) { lastSeenAt = Date.now(); judge(hit.text, 'camera'); }
+        else if (cameraResultShown && Date.now() - lastSeenAt > LOST_MS) clearResult();
       } catch (e) {
         showErr(`読み取りエンジンの準備に失敗しました（${e.message || e}）。再読み込みしてください。`);
         stopCamera(); return;
