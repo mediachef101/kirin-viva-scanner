@@ -133,6 +133,7 @@ details input[type=search] {
 .list div { display: grid; grid-template-columns: auto 1fr; gap: 10px; padding: 4px 0; border-bottom: 1px dashed var(--line); }
 .list .c { font-family: var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 .list .n { min-width: 0; overflow-wrap: anywhere; }
+.status { color: var(--muted); font-size: 12px; margin: 0; }
 .err { color: var(--warn); font-size: 13px; margin: 0; }
 .lead { flex-basis: 100%; margin: 0; font-size: 13px; color: var(--muted); }
 .lead strong { color: var(--ink); }
@@ -170,6 +171,7 @@ footer a { color: var(--accent); }
     </div>
   </div>
 
+  <p class="status" id="camStatus" hidden></p>
   <p class="err" id="camErr" hidden></p>
 
   <div class="row">
@@ -219,7 +221,7 @@ footer a { color: var(--accent); }
   </footer>
 </main>
 
-<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.4/dist/iife/reader/index.js"></script>
 <script>
 const LIST = /*LIST-BEGIN*/{
 "updated": "2026-10-03",
@@ -470,16 +472,19 @@ $('manual').addEventListener('submit', e => {
   if (v) judge(v, 'manual');
 });
 
-// ---- カメラ ----
-let reader = null;
-function makeReader() {
-  if (!window.ZXing) throw new Error('読み取りライブラリを読み込めませんでした。通信状況を確認して再読み込みしてください。');
-  const hints = new Map();
-  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8, ZXing.BarcodeFormat.UPC_A]);
-  hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-  return new ZXing.BrowserMultiFormatReader(hints, 150);
+// ---- 読み取りエンジン（zxing-cpp / WebAssembly）----
+const READ_OPTS = { formats: ['EAN13', 'EAN8', 'UPCA'], tryHarder: true, maxNumberOfSymbols: 1 };
+function engine() {
+  if (!window.ZXingWASM) throw new Error('読み取りエンジンを読み込めませんでした。通信状況を確認して再読み込みしてください。');
+  return window.ZXingWASM;
 }
 function showErr(msg) { $('camErr').textContent = msg; $('camErr').hidden = !msg; }
+function setStatus(msg) { $('camStatus').textContent = msg; $('camStatus').hidden = !msg; }
+
+// ---- カメラ ----
+let stream = null, scanning = false, frameNo = 0;
+const cv = document.createElement('canvas');
+const ctx = cv.getContext('2d', { willReadFrequently: true });
 
 $('startBtn').addEventListener('click', async () => {
   showErr('');
@@ -488,24 +493,70 @@ $('startBtn').addEventListener('click', async () => {
     return;
   }
   try {
-    reader = reader || makeReader();
-    $('video').hidden = false; $('guide').hidden = false; $('idle').hidden = true; $('stopBtn').hidden = false;
-    await reader.decodeFromConstraints(
-      { audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } },
-      $('video'),
-      (res) => { if (res) judge(res.getText(), 'camera'); }
-    );
+    const Z = engine();
+    setStatus('カメラを起動しています…');
+    Z.prepareZXingModule({ fireImmediately: true }).catch(() => {});
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+    });
+    const video = $('video');
+    video.srcObject = stream;
+    video.hidden = false; $('guide').hidden = false; $('idle').hidden = true; $('stopBtn').hidden = false;
+    await video.play();
+
+    // 近くのピントが合いにくい機種向けに、少しズームして離して読めるようにする
+    const track = stream.getVideoTracks()[0];
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    const adv = {};
+    if (caps.zoom) adv.zoom = Math.min(caps.zoom.max, Math.max(caps.zoom.min, 2));
+    if (caps.focusMode && caps.focusMode.includes('continuous')) adv.focusMode = 'continuous';
+    if (Object.keys(adv).length) track.applyConstraints({ advanced: [adv] }).catch(() => {});
+
+    const s = track.getSettings ? track.getSettings() : {};
+    setStatus(`読み取り中… バーコードを赤い線に合わせ、15〜25cmほど離してください（${s.width || video.videoWidth}×${s.height || video.videoHeight}${adv.zoom ? `・${adv.zoom}倍` : ''}）`);
+    scanning = true;
+    scanLoop();
   } catch (e) {
     stopCamera();
     const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
     showErr(denied
-      ? 'カメラの使用が許可されませんでした。iPhoneの「設定 → Safari → カメラ」で許可するか、「写真から読み取る」を使ってください。'
+      ? 'カメラの使用が許可されませんでした。iPhoneの「設定 → アプリ → Safari → カメラ」で許可するか、「写真から読み取る」を使ってください。'
       : `カメラを起動できませんでした（${e && (e.message || e.name)}）。「写真から読み取る」を使ってください。`);
   }
 });
+
+async function scanLoop() {
+  const video = $('video');
+  while (scanning) {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (vw && vh) {
+      // 基本は画面中央の帯（ガイド枠付近）を、3回に1回は画面全体を解析
+      const full = frameNo++ % 3 === 2;
+      const sx = full ? 0 : Math.round(vw * 0.05), sw = full ? vw : Math.round(vw * 0.9);
+      const sy = full ? 0 : Math.round(vh * 0.25), sh = full ? vh : Math.round(vh * 0.5);
+      const scale = Math.min(1, 1280 / sw);
+      cv.width = Math.round(sw * scale); cv.height = Math.round(sh * scale);
+      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+      try {
+        const res = await engine().readBarcodes(ctx.getImageData(0, 0, cv.width, cv.height), READ_OPTS);
+        const hit = res.find(r => r.isValid && r.text);
+        if (hit) judge(hit.text, 'camera');
+      } catch (e) {
+        showErr(`読み取りエンジンの準備に失敗しました（${e.message || e}）。再読み込みしてください。`);
+        stopCamera(); return;
+      }
+    }
+    await new Promise(r => setTimeout(r, 60));
+  }
+}
+
 function stopCamera() {
-  try { reader && reader.reset(); } catch {}
+  scanning = false;
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  $('video').srcObject = null;
   $('video').hidden = true; $('guide').hidden = true; $('idle').hidden = false; $('stopBtn').hidden = true;
+  setStatus('');
 }
 $('stopBtn').addEventListener('click', stopCamera);
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopCamera(); });
@@ -516,31 +567,15 @@ $('photo').addEventListener('change', async e => {
   if (!file) return;
   showErr('');
   try {
-    reader = reader || makeReader();
-    const img = await new Promise((ok, ng) => {
-      const i = new Image(); i.onload = () => ok(i); i.onerror = () => ng(new Error('画像を開けませんでした'));
-      i.src = URL.createObjectURL(file);
-    });
-    // 大きすぎる写真は縮小、横向き・縦向きの両方で試す
-    for (const maxSide of [1600, 1000, 2400]) {
-      for (const rot of [0, 90]) {
-        const s = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
-        const w = Math.round(img.naturalWidth * s), h = Math.round(img.naturalHeight * s);
-        const cv = document.createElement('canvas');
-        cv.width = rot ? h : w; cv.height = rot ? w : h;
-        const ctx = cv.getContext('2d');
-        if (rot) { ctx.translate(h, 0); ctx.rotate(Math.PI / 2); }
-        ctx.drawImage(img, 0, 0, w, h);
-        try {
-          const res = await reader.decodeFromImageUrl(cv.toDataURL('image/jpeg', 0.92));
-          judge(res.getText(), 'photo');
-          return;
-        } catch {}
-      }
-    }
-    showErr('写真からバーコードを見つけられませんでした。バーコードを大きく、ピントを合わせて撮り直すか、番号を手入力してください。');
+    setStatus('写真を解析しています…');
+    const res = await engine().readBarcodes(file, { ...READ_OPTS, tryRotate: true, tryDownscale: true });
+    setStatus('');
+    const hit = res.find(r => r.isValid && r.text);
+    if (hit) judge(hit.text, 'photo');
+    else showErr('写真からバーコードを見つけられませんでした。バーコードを大きく、ピントを合わせて撮り直すか、番号を手入力してください。');
   } catch (err) {
-    showErr(err.message);
+    setStatus('');
+    showErr(err.message || String(err));
   }
 });
 </script>
