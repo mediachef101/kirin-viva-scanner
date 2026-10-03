@@ -134,9 +134,6 @@ details input[type=search] {
 .list .c { font-family: var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 .list .n { min-width: 0; overflow-wrap: anywhere; }
 .status { color: var(--muted); font-size: 12px; margin: 0; }
-.zoom { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
-.zoom button { min-height: 36px; padding: 6px 12px; font-size: 13px; background: var(--surface); color: var(--ink); border: 1.5px solid var(--line); }
-.zoom button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .diag { font-family: var(--font-mono); font-size: 11px; color: var(--muted); background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 8px; display: grid; gap: 6px; }
 .diag p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .diag canvas { width: 100%; max-width: 100%; height: auto; border-radius: 6px; background: #000; }
@@ -178,7 +175,6 @@ footer a { color: var(--accent); }
   </div>
 
   <p class="status" id="camStatus" hidden></p>
-  <div class="zoom" id="zoomBar" hidden></div>
   <div class="diag" id="diagBox" hidden>
     <p id="diag"></p>
     <canvas id="diagCv"></canvas>
@@ -516,7 +512,7 @@ $('startBtn').addEventListener('click', async () => {
     video.hidden = false; $('guide').hidden = false; $('idle').hidden = true; $('stopBtn').hidden = false;
     await video.play();
 
-    // 近くのピントが合いにくい機種向けに、少しズームして離して読めるようにする
+    // 連続オートフォーカスに対応していれば有効にする
     const track = stream.getVideoTracks()[0];
     const caps = track.getCapabilities ? track.getCapabilities() : {};
     const adv = {};
@@ -525,8 +521,6 @@ $('startBtn').addEventListener('click', async () => {
 
     const s = track.getSettings ? track.getSettings() : {};
     setStatus('読み取り中… バーコードを赤い線に合わせ、15〜25cmほど離してください');
-    buildZoom(track, caps);
-    diag.caps = caps.zoom ? `zoom ${caps.zoom.min}〜${caps.zoom.max}` : 'zoom 非対応';
     diag.settings = `${s.width}×${s.height}`;
     $('diagBox').hidden = false;
     scanning = true;
@@ -540,7 +534,7 @@ $('startBtn').addEventListener('click', async () => {
   }
 });
 
-const diag = { frames: 0, found: 0, last: '-', video: '-', crop: '-', caps: '-', settings: '-', zoom: '-' };
+const diag = { frames: 0, found: 0, last: '-', video: '-', crop: '-', settings: '-' };
 let diagT0 = performance.now(), diagF0 = 0;
 setInterval(() => {
   if (!scanning) return;
@@ -552,31 +546,10 @@ setInterval(() => {
 ` +
     `映像 ${diag.video}（設定 ${diag.settings}）  解析範囲 ${diag.crop}
 ` +
-    `${diag.caps}  現在 ${diag.zoom}
-最後の検出: ${diag.last}`;
+    `最後の検出: ${diag.last}`;
   const d = $('diagCv'); d.width = cv.width; d.height = cv.height;
   if (cv.width) d.getContext('2d').drawImage(cv, 0, 0);
 }, 700);
-
-function buildZoom(track, caps) {
-  const bar = $('zoomBar'); bar.innerHTML = '';
-  if (!caps.zoom) { bar.hidden = true; return; }
-  const cur = () => (track.getSettings().zoom ?? 1);
-  diag.zoom = cur();
-  bar.append('ズーム');
-  for (const z of [1, 1.5, 2, 3, 5]) {
-    if (z < caps.zoom.min || z > caps.zoom.max) continue;
-    const b = document.createElement('button'); b.type = 'button'; b.textContent = `${z}倍`;
-    b.setAttribute('aria-pressed', String(cur() === z));
-    b.addEventListener('click', async () => {
-      try { await track.applyConstraints({ advanced: [{ zoom: z }] }); } catch {}
-      diag.zoom = cur();
-      bar.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
-    });
-    bar.appendChild(b);
-  }
-  bar.hidden = false;
-}
 
 async function scanLoop() {
   const video = $('video');
@@ -611,7 +584,6 @@ function stopCamera() {
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
   $('video').srcObject = null;
   $('video').hidden = true; $('guide').hidden = true; $('idle').hidden = false; $('stopBtn').hidden = true;
-  $('zoomBar').hidden = true;
   setStatus('');
 }
 $('stopBtn').addEventListener('click', stopCamera);
