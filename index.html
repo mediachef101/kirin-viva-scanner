@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ビバ対象チェック">
+<meta name="theme-color" content="#0f3b3a">
+<title>ビバ！対象チェッカー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: 上にカメラの「のぞき窓」、その下に判定カード。片手・縦持ちで完結する1カラム */
+:root {
+  --bg: #eef3f1;
+  --surface: #ffffff;
+  --ink: #12302f;
+  --muted: #5b716f;
+  --line: #d3dedb;
+  --accent: #0f5e5b;
+  --accent-ink: #ffffff;
+  --ok: #157a3c;
+  --ok-bg: #e3f4e8;
+  --ng: #b3261e;
+  --ng-bg: #fbe7e5;
+  --warn: #8a5a00;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Hiragino Kaku Gothic ProN", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c1716; --surface: #142321; --ink: #e4efec; --muted: #93aba7; --line: #26403d;
+    --accent: #4fc0b8; --accent-ink: #062120;
+    --ok: #5fd38a; --ok-bg: #12301f; --ng: #ff8a80; --ng-bg: #3a1714; --warn: #f0c060;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c1716; --surface: #142321; --ink: #e4efec; --muted: #93aba7; --line: #26403d;
+  --accent: #4fc0b8; --accent-ink: #062120;
+  --ok: #5fd38a; --ok-bg: #12301f; --ng: #ff8a80; --ng-bg: #3a1714; --warn: #f0c060;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.6;
+  padding: env(safe-area-inset-top, 0px) 16px env(safe-area-inset-bottom, 0px);
+}
+main { max-width: 520px; margin: 0 auto; padding-block: 16px 32px; display: grid; gap: 16px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font-size: 22px; font-weight: 900; margin: 0; letter-spacing: .02em; text-wrap: balance; }
+.meta { font-size: 12px; color: var(--muted); }
+
+.viewer {
+  position: relative; border-radius: 18px; overflow: hidden; background: #000;
+  aspect-ratio: 4 / 3; max-width: 100%;
+}
+.viewer video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.viewer .guide {
+  position: absolute; left: 10%; right: 10%; top: 30%; bottom: 30%;
+  border: 2px solid rgba(255,255,255,.85); border-radius: 10px; pointer-events: none;
+  box-shadow: 0 0 0 999px rgba(0,0,0,.28);
+}
+.viewer .guide::after {
+  content: ""; position: absolute; left: 6px; right: 6px; top: 50%; height: 2px;
+  background: #ff5a4e; box-shadow: 0 0 8px #ff5a4e;
+}
+.viewer .idle {
+  position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
+  color: #d8e6e3; padding: 24px; gap: 12px; align-content: center;
+  background: radial-gradient(circle at 50% 40%, #1c4a47, #081414);
+}
+.viewer .idle p { margin: 0; font-size: 13px; color: #a9c4c0; }
+
+button, .btn {
+  font: inherit; font-weight: 700; border: 0; border-radius: 12px; cursor: pointer;
+  padding: 12px 18px; min-height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+}
+.btn-primary { background: var(--accent); color: var(--accent-ink); font-size: 17px; }
+.btn-ghost { background: transparent; color: var(--accent); border: 1.5px solid var(--line); }
+button:focus-visible, input:focus-visible, .btn:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.row > * { flex: 1 1 auto; }
+
+.result {
+  border-radius: 18px; padding: 18px 18px 16px; background: var(--surface); border: 1.5px solid var(--line);
+  display: grid; gap: 6px; min-height: 132px; align-content: center;
+}
+.result .verdict { font-size: 30px; font-weight: 900; line-height: 1.2; }
+.result .name { font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
+.result .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 15px; letter-spacing: .06em; color: var(--muted); }
+.result .note { font-size: 12px; color: var(--muted); }
+.result.ok { background: var(--ok-bg); border-color: var(--ok); }
+.result.ok .verdict { color: var(--ok); }
+.result.ng { background: var(--ng-bg); border-color: var(--ng); }
+.result.ng .verdict { color: var(--ng); }
+.result.pop { animation: pop .28s ease-out; }
+@keyframes pop { from { transform: scale(.97); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .result.pop { animation: none; } }
+
+form.manual { display: flex; gap: 8px; }
+form.manual input {
+  flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); font-size: 18px; letter-spacing: .05em;
+  padding: 10px 12px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink);
+}
+form.manual button { flex: 0 0 auto; }
+
+section h2 { font-size: 13px; letter-spacing: .08em; color: var(--muted); margin: 0 0 6px; font-weight: 700; }
+ul.history { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+ul.history li {
+  display: grid; grid-template-columns: 2.2em 1fr; gap: 8px; align-items: baseline;
+  padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px;
+}
+ul.history .mark { font-weight: 900; }
+ul.history .mark.ok { color: var(--ok); }
+ul.history .mark.ng { color: var(--ng); }
+ul.history .txt { min-width: 0; overflow-wrap: anywhere; }
+ul.history .c { font-family: var(--font-mono); color: var(--muted); font-size: 12px; }
+
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; }
+details summary { cursor: pointer; font-weight: 700; }
+details input[type=search] {
+  width: 100%; margin: 10px 0; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--ink); font: inherit;
+}
+.list { max-height: 50vh; overflow-y: auto; font-size: 13px; }
+.list div { display: grid; grid-template-columns: auto 1fr; gap: 10px; padding: 4px 0; border-bottom: 1px dashed var(--line); }
+.list .c { font-family: var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.list .n { min-width: 0; overflow-wrap: anywhere; }
+.err { color: var(--warn); font-size: 13px; margin: 0; }
+footer { font-size: 11px; color: var(--muted); line-height: 1.7; }
+footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>ビバ！対象チェッカー</h1>
+    <span class="meta" id="meta"></span>
+  </header>
+
+  <div class="viewer" id="viewer">
+    <video id="video" playsinline muted hidden></video>
+    <div class="guide" id="guide" hidden></div>
+    <div class="idle" id="idle">
+      <button class="btn-primary" id="startBtn" type="button">カメラで読み取る</button>
+      <p>商品のバーコードを赤い線に合わせてください</p>
+    </div>
+  </div>
+
+  <p class="err" id="camErr" hidden></p>
+
+  <div class="row">
+    <label class="btn btn-ghost" for="photo">写真から読み取る
+      <input id="photo" type="file" accept="image/*" capture="environment" hidden>
+    </label>
+    <button class="btn-ghost" id="stopBtn" type="button" hidden>カメラを止める</button>
+  </div>
+
+  <div class="result" id="result" aria-live="polite">
+    <div class="verdict">—</div>
+    <div class="name">バーコードを読み取ると、ここに判定が出ます</div>
+    <div class="code">例：4909411091903</div>
+  </div>
+
+  <form class="manual" id="manual">
+    <input id="manualCode" inputmode="numeric" pattern="[0-9]*" maxlength="14" placeholder="番号を手入力" aria-label="バーコード番号">
+    <button class="btn-primary" type="submit">判定</button>
+  </form>
+
+  <section id="historySec" hidden>
+    <h2>読み取り履歴</h2>
+    <ul class="history" id="history"></ul>
+  </section>
+
+  <details>
+    <summary id="listSummary">対象商品の一覧</summary>
+    <input type="search" id="filter" placeholder="商品名・番号で絞り込み" aria-label="一覧の絞り込み">
+    <div class="list" id="list"></div>
+  </details>
+
+  <footer>
+    非公式の確認ツールです。対象かどうかの最終判断は
+    <a href="https://www.kirin.co.jp/campaign/beverage/viva/barcode/" target="_blank" rel="noopener">公式の対象商品ページ</a>
+    で確認してください。一覧は <span id="updated"></span> 時点のものです。
+  </footer>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script>
+const LIST = /*LIST-BEGIN*/{
+"updated": "2026-10-03",
+"source": "https://www.kirin.co.jp/campaign/beverage/viva/barcode/",
+"items": {
+"4909411032517": "キリン　午後の紅茶　ストレートティー　２５０ｍｌＬＬスリム",
+"4909411032531": "キリン　午後の紅茶　レモンティー　２５０ｍｌＬＬスリム",
+"4909411032579": "キリン　午後の紅茶　ミルクティー　２５０ｍｌＬＬスリム",
+"4909411048679": "キリン　生茶　２５０ｍｌＬＬスリム",
+"4909411048754": "キリン　午後の紅茶　おいしい無糖　２ＬＰＥＴ",
+"4909411057121": "トロピカーナ　１００％　オレンジ　２５０ｍｌＬＬスリム",
+"4909411057145": "トロピカーナ　１００％　アップル　２５０ｍｌＬＬスリム",
+"4909411057169": "トロピカーナ　１００％　グレープフルーツ　２５０ｍｌＬＬスリム",
+"4909411057183": "トロピカーナ　１００％　グレープ　２５０ｍｌＬＬスリム",
+"4909411057244": "トロピカーナ　１００％　マンゴーブレンド　２５０ｍｌＬＬスリム",
+"4909411069100": "キリン　生茶　２ＬＰＥＴ",
+"4909411069421": "キリンのやわらか天然水　３１０ｍｌＰＥＴ",
+"4909411072865": "トロピカーナ　１００％　まるごと果実感　アップル　９００ｍｌゲーブルトップ",
+"4909411072902": "トロピカーナ　１００％　まるごと果実感　マンゴーブレンド　９００ｍｌゲーブルトップ",
+"4909411073114": "トロピカーナ　１００％　オレンジ　３３０ｍｌＰＥＴ",
+"4909411073930": "キリン　メッツ　ライチ　４８０ｍｌＰＥＴ",
+"4909411073954": "トロピカーナ　１００％　パインアップル　２５０ｍｌＬＬスリム",
+"4909411076672": "トロピカーナ　１００％　オレンジ　１０００ｍｌＬＬスリム",
+"4909411076696": "トロピカーナ　１００％　グレープフルーツ　１０００ｍｌＬＬスリム",
+"4909411076719": "トロピカーナ　１００％　アップル　１０００ｍｌＬＬスリム",
+"4909411076795": "キリン　午後の紅茶　ストレートティー　５００ｍｌＰＥＴ（自動販売機用）",
+"4909411076856": "キリン　午後の紅茶　ミルクティー　５００ｍｌＰＥＴ（自動販売機用）",
+"4909411076931": "小岩井　純水りんご　４３０ｍｌＰＥＴ",
+"4909411076955": "小岩井　純水ぶどう　４３０ｍｌＰＥＴ",
+"4909411076979": "小岩井　純水みかん　４３０ｍｌＰＥＴ",
+"4909411077013": "小岩井　純水りんご　１．５ＬＰＥＴ",
+"4909411077037": "小岩井　純水ぶどう　１．５ＬＰＥＴ",
+"4909411077051": "小岩井　純水みかん　１．５ＬＰＥＴ",
+"4909411077136": "小岩井　純水りんご　２８０ｍｌＰＥＴ",
+"4909411077211": "トロピカーナ　１００％　まるごと果実感　グレープフルーツ　９００ｍｌゲーブルトップ",
+"4909411077235": "トロピカーナ　１００％　まるごと果実感　パインアップル　９００ｍｌゲーブルトップ",
+"4909411077396": "キリン　午後の紅茶　レモンティー　５００ｍｌＰＥＴ（自動販売機用）",
+"4909411080532": "キリン　メッツ　超刺激クリアグレープフルーツ　４８０ｍｌＰＥＴ",
+"4909411080556": "キリン　メッツ　超刺激クリアグレープフルーツ　１．５ＬＰＥＴ",
+"4909411080938": "キリン　午後の紅茶　おいしい無糖　２ＬＰＥＴ　９本入り",
+"4909411081324": "キリン　生茶　２ＬＰＥＴ　９本入りＥＣ専用",
+"4909411081683": "キリンヌューダ　スパークリング　５００ｍｌＰＥＴ",
+"4909411084493": "キリン　生茶　ほうじ煎茶　ホット＆コールド　２８０ｍｌＰＥＴ",
+"4909411084578": "キリン　生茶　３００ｍｌＰＥＴ",
+"4909411084752": "キリン　世界のＫｉｔｃｈｅｎから　ソルティライチ　３００ｇパウチ",
+"4909411084790": "キリン　午後の紅茶　ストレートティー　５００ｍｌＰＥＴ",
+"4909411084875": "キリン　午後の紅茶　レモンティー　５００ｍｌＰＥＴ",
+"4909411084950": "キリン　午後の紅茶　ミルクティー　５００ｍｌＰＥＴ",
+"4909411084998": "キリン　午後の紅茶　ミルクティー　２８０ｍｌＰＥＴ",
+"4909411085056": "キリン　午後の紅茶　リフレッシュオレンジティー　４３０ｍｌＰＥＴ",
+"4909411085131": "トロピカーナ　１００％　まるごと果実感　グレープ　９００ｍｌゲーブルトップ",
+"4909411085292": "キリン　世界のＫｉｔｃｈｅｎから　ソルティライチベース　５００ｍｌＰＥＴ",
+"4909411085438": "キリン　ラブズ　スポーツ　５５５ｍｌＰＥＴ",
+"4909411085452": "キリン　ラブズ　スポーツ　２ＬＰＥＴ",
+"4909411085551": "キリン　世界のＫｉｔｃｈｅｎから　ソルティライチ　５００ｍｌＰＥＴ",
+"4909411085575": "キリン　世界のＫｉｔｃｈｅｎから　ソルティライチ　１．５ＬＰＥＴ",
+"4909411085650": "キリン　午後の紅茶　おいしい無糖　５００ｍｌＰＥＴ",
+"4909411085674": "キリン　午後の紅茶　おいしい無糖　５５５ｍｌＰＥＴ　自販機用",
+"4909411086275": "キリン　午後の紅茶　ストレートティー　１．５ＬＰＥＴ",
+"4909411086299": "キリン　午後の紅茶　ミルクティー　１．５ＬＰＥＴ",
+"4909411086312": "キリン　午後の紅茶　レモンティー　１．５ＬＰＥＴ",
+"4909411086749": "キリン　午後の紅茶　レモンティー　２８０ｍｌＰＥＴ",
+"4909411087081": "トロピカーナ　エッセンシャルズ　食物繊維　３３０ｍｌＬＬプリズマ",
+"4909411087104": "トロピカーナ　エッセンシャルズ　マルチビタミン　３３０ｍｌＬＬプリズマ",
+"4909411087128": "トロピカーナ　エッセンシャルズ　鉄分　３３０ｍｌＬＬプリズマ",
+"4909411087142": "トロピカーナ　エッセンシャルズ　マルチミネラル　３３０ｍｌＬＬプリズマ",
+"4909411087241": "キリン　メッツ　プラス　レモンスカッシュ　４８０ｍｌＰＥＴ",
+"4909411087531": "キリン　生茶　２ＬＰＥＴ　ラベルレス　ケース販売品（９本入りＥＣ専用）",
+"4909411088217": "キリン　午後の紅茶　アップルティープラス　４３０ｍｌＰＥＴ",
+"4909411088477": "キリン　午後の紅茶　おいしい無糖　香るレモン　５００ｍｌＰＥＴ",
+"4909411088613": "キリン　生茶　５５５ｍｌＰＥＴ",
+"4909411088842": "キリン　午後の紅茶　おいしい無糖　５００ｍｌＰＥＴ　ラベルレス",
+"4909411088866": "キリン　午後の紅茶　おいしい無糖　２ＬＰＥＴ　ラベルレス　９本入り",
+"4909411089016": "キリン　自然が磨いた天然水　２ＬＰＥＴ",
+"4909411089030": "キリン　自然が磨いた天然水　２ＬＰＥＴ",
+"4909411089061": "トロピカーナ　エッセンシャルズ　マルチビタミン　２８０ｍｌＰＥＴ",
+"4909411089184": "キリン　午後の紅茶　カフェインゼロ　ピーチティー　４３０ｍｌＰＥＴ",
+"4909411089443": "キリン　さわやか香ばし麦茶　６００ｍｌＰＥＴ",
+"4909411089665": "キリン　ホットレモン　２８０ｍｌＰＥＴ",
+"4909411089948": "キリン　イミューズ　免疫ケアウォーター　５００ｍｌＰＥＴ",
+"4909411089986": "キリン　イミューズ　レモン　５００ｍｌＰＥＴ",
+"4909411090432": "キリンレモン　１．５ＬＰＥＴ",
+"4909411090470": "キリンレモン　５００ｍｌＰＥＴ",
+"4909411090494": "キリンレモン　炭酸水　５００ｍｌＰＥＴ",
+"4909411090708": "キリン　自然が磨いた天然水　２ＬＰＥＴ　ラベルレス　９本入り　ＥＣ限定",
+"4909411091217": "キリン　午後の紅茶　おいしい無糖　ミルクティー　５００ｍｌＰＥＴ",
+"4909411091279": "トロピカーナ　１００％　まるごと果実感　オレンジ　９００ｍｌゲーブルトップ",
+"4909411091767": "キリン　生茶　からだ晴れ茶　５２５ｍｌＰＥＴ",
+"4909411091781": "キリン　生茶　からだ晴れ茶　２８０ｍｌＰＥＴ",
+"4909411091804": "キリン　スポーツ　プロフェッショナル　５５５ｍｌＰＥＴ",
+"4909411091866": "トロピカーナ　リフレッシュフルーツ　オレンジ＆ピンクグレープフルーツ　３３０ｍｌＰＥＴ",
+"4909411091880": "キリン　生茶　２８０ｍｌＰＥＴ",
+"4909411091903": "キリン　生茶　５２５ｍｌＰＥＴ",
+"4909411091927": "キリン　生茶　６００ｍｌＰＥＴＣＶＳ",
+"4909411091941": "キリン　生茶　５２５ｍｌＰＥＴ　ラベルレス　６本パック",
+"4909411091972": "キリン　生茶　５２５ｍｌＰＥＴ　ラベルレス　ケース販売品",
+"4909411092641": "キリン　生茶　ほうじ煎茶　５２５ｍｌＰＥＴ",
+"4909411092665": "キリン　生茶　ほうじ煎茶　６００ｍｌＰＥＴ　ＣＶＳ限定",
+"4909411092689": "キリン　生茶　ほうじ煎茶　５２５ｍｌＰＥＴ　ラベルレス　６本パック",
+"4909411092719": "キリン　生茶　ほうじ煎茶　５２５ｍｌＰＥＴ　ラベルレス　ケース販売品",
+"4909411092849": "キリン　午後の紅茶　おいしい無糖　ミルクティー　４３０ｍｌＰＥＴ",
+"4909411093266": "キリン　午後の紅茶　ＴＥＡ　ＳＥＬＥＣＴＩＯＮ　アールグレイアイスティー　５００ｍｌＰＥＴ",
+"4909411093280": "キリン　午後の紅茶　ＴＥＡ　ＳＥＬＥＣＴＩＯＮ　ロイヤルブレンドティーラテ　５００ｍｌＰＥＴ",
+"4909411093358": "キリン　自然が磨いた天然水　６００ｍｌＰＥＴ",
+"4909411093389": "キリン　自然が磨いた天然水　６００ｍｌＰＥＴ　ラベルレス　ＥＣ限定",
+"4909411095642": "キリン　午後の紅茶　Ｓｐａｒｋｌｉｎｇ　ライチスカッシュ　５００ｍｌＰＥＴ",
+"4909411096472": "キリン　午後の紅茶　ストレートティー　ホット　４００ｍｌＰＥＴ",
+"4909411096496": "キリン　午後の紅茶　ミルクティー　ホット　４００ｍｌＰＥＴ",
+"4909411096519": "キリン　午後の紅茶　レモンティー　ホット　４００ｍｌＰＥＴ",
+"4909411096533": "キリン　午後の紅茶　ストレートティー　ホット＆コールド　２８０ｍｌＰＥＴ",
+"4909411096557": "キリン　午後の紅茶　ミルクティー　ホット＆コールド　２８０ｍｌＰＥＴ",
+"4909411096571": "キリン　午後の紅茶　レモンティー　ホット＆コールド　２８０ｍｌＰＥＴ",
+"4909411096595": "キリン　午後の紅茶　チャイティーラテ　ホット　４００ｍｌＰＥＴ",
+"4909411096618": "キリン　午後の紅茶　キャラメルティーラテ　ホット　４００ｍｌＰＥＴ",
+"4909411097066": "キリン　イミューズ　グリーン　５００ｍｌＰＥＴ",
+"4909411097523": "キリン　生茶　おいしいカフェインゼロ　４３０ｍｌＰＥＴ",
+"4909411097547": "キリン　生茶　ホット＆コールド　２８０ｍｌＰＥＴ",
+"4909411097585": "キリン　ヘルシア　緑茶　３５０ｍｌＰＥＴスリム",
+"4909411097608": "キリン　ヘルシア　緑茶　３５０ｍｌＰＥＴ短角",
+"4909411097622": "キリン　ヘルシア　緑茶　１０５０ｍｌＰＥＴ",
+"4909411097646": "キリン　ヘルシア　緑茶　うまみ贅沢仕立て　５００ｍｌＰＥＴ",
+"4909411097660": "キリン　ヘルシア　緑茶　うまみ贅沢仕立て　１０００ｍｌＰＥＴ",
+"4909411097684": "キリン　ヘルシア　ウォーター　５００ｍｌＰＥＴ",
+"4909411097721": "キリン　生茶　リッチ　４００ｍｌＰＥＴ",
+"4909411105679": "キリン　午後の紅茶　ＴＥＡ　ＳＥＬＥＣＴＩＯＮ　チョコレートティーラテ　４００ｍｌＰＥＴ",
+"4909411105877": "キリン　午後の紅茶　おいしい無糖　６００ｍｌＰＥＴ",
+"4909411105891": "キリン　午後の紅茶　おいしい無糖　香るレモン　６００ｍｌＰＥＴ",
+"4909411105914": "キリン　午後の紅茶　おいしい無糖　香るレモン　５５５ｍｌＰＥＴ",
+"4909411106607": "キリン　世界のＫｉｔｃｈｅｎから　ライムソルト　５００ｍｌＰＥＴ",
+"4909411114206": "キリン　午後の紅茶　おいしい無糖　ホット　４００ｍｌＰＥＴ",
+"4909411114442": "キリン　生茶　ＡＵＴＵＭＮ　ＴＥＡ　ＬＡＴＴＥ　ほうじ茶ラテ　４００ｍｌＰＥＴ",
+"4909411114541": "トロピカーナ　リフレッシュフルーツ　摘みたてまるごと搾りぶどう　３３０ｍｌＰＥＴ",
+"4909411114565": "キリン　ヘルシア　うまみ緑茶　１０００ｍｌＰＥＴ",
+"4909411114589": "キリン　ヘルシア　うまみ緑茶　５００ｍｌＰＥＴ",
+"4909411114718": "キリン　午後の紅茶　ＦＲＵＩＴＳ　＆　ＩＣＥ　ＴＥＡ　オレンジとグレープフルーツ　５００ｍｌＰＥＴ",
+"4909411114732": "キリン　午後の紅茶　ＦＲＵＩＴＳ　＆　ＩＣＥ　ＴＥＡ　白ぶどうとレモン　５００ｍｌＰＥＴ",
+"4909411117047": "キリン　午後の紅茶　アールグレイミルクティー　４００ｍｌＰＥＴ",
+"4909411118297": "キリン　午後の紅茶　ｍｏｔｔａｉｎａｉ　ふじりんごティー　４００ｍｌＰＥＴ",
+"4909411119768": "キリン　午後の紅茶　チョコレートティーラテ　４００ｍｌＰＥＴ",
+"4909411120061": "キリン　イミューズ　フルーツリフレッシュ　グレープフルーツミックス　５００ｍｌＰＥＴ",
+"4909411120108": "キリン　イミューズ　フルーツリフレッシュ　アップルミックス　５００ｍｌＰＥＴ",
+"4909411121020": "キリン　世界のＫｉｔｃｈｅｎから　とろとろ桃のフルーニュ　４３０ｍｌＰＥＴ",
+"4909411121129": "キリン　生茶　熟成　５２５ｍｌＰＥＴ　（9/29発売予定）",
+"4909411121143": "キリン　午後の紅茶　ｍｏｔｔａｉｎａｉ　なごりいちごティー　４００ｍｌＰＥＴ",
+"4909411121587": "キリン　サプリプラス　グレフルスカッシュ　４８０ｍｌＰＥＴ",
+"4909411123017": "キリン　午後の紅茶　４０ＴＨ　ＢＬＥＮＤ　３種の香るフルーツ＆ストレートティー　５００ｍｌＰＥＴ",
+"4909411123093": "トロピカーナ　さわやか搾りオレンジ　９００ｍｌゲーブルトップ",
+"4909411124175": "キリン　生茶　ジャスミン香る緑茶　５２５ｍｌＰＥＴ",
+"4909411124588": "キリン　世界のＫｉｔｃｈｅｎから　ソルティライチソーダ　５００ｍｌＰＥＴ",
+"4909411126414": "キリン　午後の紅茶　４０ＴＨ　ＢＬＥＮＤ　パッションフルーツ香るレモンティー　５００ｍｌＰＥＴ",
+"4909411128241": "キリン　午後の紅茶　TEA　LATTE　with　ESPRESSO　５００ｍｌＰＥＴ　（10/6発売予定）",
+"4909411128265": "キリン　午後の紅茶　TEA　LATTE　CREAM　＆　MILK　５００ｍｌＰＥＴ　（10/6発売予定）",
+"4909411128289": "キリン　午後の紅茶　ゆず柑橘ティー　４００ｍｌＰＥＴ　（9/15発売予定）",
+"4909411128623": "トロピカーナ　エッセンシャルズ　FRUIT　&　PROTEIN　アップル＆パイン　３３０ｍｌＬＬプリズマ　（10/6発売予定）",
+"4909411129989": "トロピカーナ　エッセンシャルズ　FRUIT　&　PROTEIN　マンゴー＆白ぶどう　３３０ｍｌＬＬプリズマ　（10/6発売予定）"
+}
+}/*LIST-END*/;
+const ITEMS = LIST.items || {};
+const $ = id => document.getElementById(id);
+
+$('meta').textContent = `対象 ${Object.keys(ITEMS).length} 品`;
+$('updated').textContent = LIST.updated || '—';
+$('listSummary').textContent = `対象商品の一覧（${Object.keys(ITEMS).length}品）`;
+
+// 全角英数を半角に（表示用）
+const half = s => s.replace(/[Ａ-Ｚａ-ｚ０-９．％＆]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
+
+// ---- 判定 ----
+function normalize(raw) {
+  let d = String(raw).replace(/\D/g, '');
+  if (d.length === 12) d = '0' + d;          // UPC-A → EAN-13
+  if (d.length === 14) d = d.slice(1);        // GTIN-14 先頭0
+  return d;
+}
+function checkDigitOk(d) {
+  if (!/^\d{8}$|^\d{13}$/.test(d)) return false;
+  const body = d.slice(0, -1).split('').reverse();
+  const sum = body.reduce((s, n, i) => s + Number(n) * (i % 2 === 0 ? 3 : 1), 0);
+  return (10 - sum % 10) % 10 === Number(d.at(-1));
+}
+
+let lastCode = '', lastAt = 0;
+const history = [];
+function judge(raw, source) {
+  const code = normalize(raw);
+  const now = Date.now();
+  if (source === 'camera' && code === lastCode && now - lastAt < 2500) return;
+  lastCode = code; lastAt = now;
+
+  const box = $('result');
+  const name = ITEMS[code];
+  box.className = 'result';
+  void box.offsetWidth;
+  let verdict, label, note = '';
+  if (name) {
+    box.classList.add('ok', 'pop');
+    verdict = '対象です'; label = half(name);
+  } else {
+    box.classList.add('ng', 'pop');
+    verdict = '対象外';
+    if (!checkDigitOk(code)) { label = '番号が正しくないようです'; note = '13桁（または8桁）のバーコード番号を確認してください'; }
+    else { label = '一覧にない商品です'; note = code.startsWith('4909411') ? 'キリンの商品ですが、今回の対象一覧には入っていません' : ''; }
+  }
+  box.innerHTML = '';
+  for (const [cls, txt] of [['verdict', verdict], ['name', label], ['code', code], ['note', note]]) {
+    if (!txt) continue;
+    const el = document.createElement('div'); el.className = cls; el.textContent = txt; box.appendChild(el);
+  }
+  if (navigator.vibrate) navigator.vibrate(name ? 60 : [40, 60, 40]);
+
+  history.unshift({ code, ok: !!name, label: name ? half(name) : label });
+  history.length = Math.min(history.length, 12);
+  renderHistory();
+}
+function renderHistory() {
+  $('historySec').hidden = history.length === 0;
+  const ul = $('history'); ul.innerHTML = '';
+  for (const h of history) {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="mark ${h.ok ? 'ok' : 'ng'}">${h.ok ? '○' : '×'}</span><span class="txt"></span>`;
+    li.querySelector('.txt').innerHTML = `<span></span><br><span class="c"></span>`;
+    li.querySelector('.txt span').textContent = h.label;
+    li.querySelector('.txt .c').textContent = h.code;
+    ul.appendChild(li);
+  }
+}
+
+// ---- 一覧 ----
+function renderList(q = '') {
+  const qq = half(q).toLowerCase();
+  const box = $('list'); box.innerHTML = '';
+  for (const [c, n] of Object.entries(ITEMS)) {
+    const nh = half(n);
+    if (qq && !c.includes(qq) && !nh.toLowerCase().includes(qq)) continue;
+    const row = document.createElement('div');
+    row.innerHTML = '<span class="c"></span><span class="n"></span>';
+    row.firstChild.textContent = c; row.lastChild.textContent = nh;
+    box.appendChild(row);
+  }
+}
+renderList();
+$('filter').addEventListener('input', e => renderList(e.target.value));
+
+// ---- 手入力 ----
+$('manual').addEventListener('submit', e => {
+  e.preventDefault();
+  const v = $('manualCode').value.trim();
+  if (v) judge(v, 'manual');
+});
+
+// ---- カメラ ----
+let reader = null;
+function makeReader() {
+  if (!window.ZXing) throw new Error('読み取りライブラリを読み込めませんでした。通信状況を確認して再読み込みしてください。');
+  const hints = new Map();
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8, ZXing.BarcodeFormat.UPC_A]);
+  hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+  return new ZXing.BrowserMultiFormatReader(hints, 150);
+}
+function showErr(msg) { $('camErr').textContent = msg; $('camErr').hidden = !msg; }
+
+$('startBtn').addEventListener('click', async () => {
+  showErr('');
+  if (!navigator.mediaDevices?.getUserMedia) {
+    showErr('このページではカメラを使えません。「写真から読み取る」を使ってください。');
+    return;
+  }
+  try {
+    reader = reader || makeReader();
+    $('video').hidden = false; $('guide').hidden = false; $('idle').hidden = true; $('stopBtn').hidden = false;
+    await reader.decodeFromConstraints(
+      { audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } },
+      $('video'),
+      (res) => { if (res) judge(res.getText(), 'camera'); }
+    );
+  } catch (e) {
+    stopCamera();
+    const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
+    showErr(denied
+      ? 'カメラの使用が許可されませんでした。iPhoneの「設定 → Safari → カメラ」で許可するか、「写真から読み取る」を使ってください。'
+      : `カメラを起動できませんでした（${e && (e.message || e.name)}）。「写真から読み取る」を使ってください。`);
+  }
+});
+function stopCamera() {
+  try { reader && reader.reset(); } catch {}
+  $('video').hidden = true; $('guide').hidden = true; $('idle').hidden = false; $('stopBtn').hidden = true;
+}
+$('stopBtn').addEventListener('click', stopCamera);
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopCamera(); });
+
+// ---- 写真 ----
+$('photo').addEventListener('change', async e => {
+  const file = e.target.files[0]; e.target.value = '';
+  if (!file) return;
+  showErr('');
+  try {
+    reader = reader || makeReader();
+    const img = await new Promise((ok, ng) => {
+      const i = new Image(); i.onload = () => ok(i); i.onerror = () => ng(new Error('画像を開けませんでした'));
+      i.src = URL.createObjectURL(file);
+    });
+    // 大きすぎる写真は縮小、横向き・縦向きの両方で試す
+    for (const maxSide of [1600, 1000, 2400]) {
+      for (const rot of [0, 90]) {
+        const s = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.round(img.naturalWidth * s), h = Math.round(img.naturalHeight * s);
+        const cv = document.createElement('canvas');
+        cv.width = rot ? h : w; cv.height = rot ? w : h;
+        const ctx = cv.getContext('2d');
+        if (rot) { ctx.translate(h, 0); ctx.rotate(Math.PI / 2); }
+        ctx.drawImage(img, 0, 0, w, h);
+        try {
+          const res = await reader.decodeFromImageUrl(cv.toDataURL('image/jpeg', 0.92));
+          judge(res.getText(), 'photo');
+          return;
+        } catch {}
+      }
+    }
+    showErr('写真からバーコードを見つけられませんでした。バーコードを大きく、ピントを合わせて撮り直すか、番号を手入力してください。');
+  } catch (err) {
+    showErr(err.message);
+  }
+});
+</script>
+</body>
+</html>
