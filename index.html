@@ -547,15 +547,15 @@ $('startBtn').addEventListener('click', async () => {
     await video.play();
 
     // 倍率は等倍に戻し、連続オートフォーカスに対応していれば有効にする
-    const track = stream.getVideoTracks()[0];
-    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    const videoTrack = stream.getVideoTracks()[0];
+    const caps = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
     const adv = {};
     if (caps.zoom) adv.zoom = caps.zoom.min > 1 ? caps.zoom.min : 1;
     if (caps.focusMode && caps.focusMode.includes('continuous')) adv.focusMode = 'continuous';
-    if (Object.keys(adv).length) await track.applyConstraints({ advanced: [adv] }).catch(() => {});
-    diag.cam = `${track.label || '?'}${caps.zoom ? `  zoom ${track.getSettings().zoom ?? '?'}` : ''}`;
+    if (Object.keys(adv).length) await videoTrack.applyConstraints({ advanced: [adv] }).catch(() => {});
+    diag.cam = `${videoTrack.label || '?'}${caps.zoom ? `  zoom ${videoTrack.getSettings().zoom ?? '?'}` : ''}`;
 
-    const s = track.getSettings ? track.getSettings() : {};
+    const s = videoTrack.getSettings ? videoTrack.getSettings() : {};
     setStatus('読み取り中… バーコードを赤い線に合わせ、15〜25cmほど離してください');
     diag.settings = `${s.width}×${s.height}`;
     $('diagBox').hidden = !DEBUG;
