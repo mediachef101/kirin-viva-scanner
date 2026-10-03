@@ -531,7 +531,7 @@ $('startBtn').addEventListener('click', async () => {
     const s = track.getSettings ? track.getSettings() : {};
     setStatus('読み取り中… バーコードを赤い線に合わせ、15〜25cmほど離してください');
     diag.settings = `${s.width}×${s.height}`;
-    $('diagBox').hidden = false;
+    $('diagBox').hidden = !DEBUG;
     scanning = true;
     scanLoop();
   } catch (e) {
@@ -543,6 +543,7 @@ $('startBtn').addEventListener('click', async () => {
   }
 });
 
+const DEBUG = /(^|[?&])debug(=|&|$)/.test(location.search);
 const diag = { frames: 0, found: 0, last: '-', video: '-', crop: '-', settings: '-', cam: '-' };
 let diagT0 = performance.now(), diagF0 = 0;
 setInterval(() => {
