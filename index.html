@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-title" content="ビバ対象チェック">
 <meta name="theme-color" content="#0f3b3a">
 <title>ビバ！対象チェッカー</title>
+<meta name="description" content="キリンビバレッジ「ビバ！ドリームキャンペーン」の対象商品かどうかを、iPhoneのカメラでバーコードを読んで判定する非公式チェッカーです。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=JetBrains+Mono:wght@500;700&display=swap">
@@ -133,6 +134,14 @@ details input[type=search] {
 .list .c { font-family: var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 .list .n { min-width: 0; overflow-wrap: anywhere; }
 .err { color: var(--warn); font-size: 13px; margin: 0; }
+.lead { flex-basis: 100%; margin: 0; font-size: 13px; color: var(--muted); }
+.lead strong { color: var(--ink); }
+.about { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; font-size: 13px; }
+.about dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 8px; }
+.about dt { color: var(--muted); font-weight: 700; white-space: nowrap; }
+.about dd { margin: 0; min-width: 0; }
+.about p { margin: 0; color: var(--muted); }
+.about a, footer a { color: var(--accent); }
 footer { font-size: 11px; color: var(--muted); line-height: 1.7; }
 footer a { color: var(--accent); }
 </style>
@@ -142,6 +151,7 @@ footer a { color: var(--accent); }
   <header>
     <h1>ビバ！対象チェッカー</h1>
     <span class="meta" id="meta"></span>
+    <p class="lead">キリンビバレッジ「<strong>ビバ！ドリームキャンペーン</strong>」の対象商品かどうかを、バーコードで調べられます。</p>
   </header>
 
   <div class="viewer" id="viewer">
@@ -183,6 +193,17 @@ footer a { color: var(--accent); }
     <input type="search" id="filter" placeholder="商品名・番号で絞り込み" aria-label="一覧の絞り込み">
     <div class="list" id="list"></div>
   </details>
+
+  <section class="about">
+    <h2>このキャンペーンについて</h2>
+    <dl>
+      <dt>キャンペーン</dt><dd>ビバ！ドリームキャンペーン（キリンビバレッジ）</dd>
+      <dt>応募期間</dt><dd>2026年8月3日（月）〜 10月13日（火）当日消印有効</dd>
+      <dt>賞品</dt><dd>東京ディズニーシー 貸切「プライベート・イブニング・パーティー」に合計8,000名を招待</dd>
+      <dt>応募方法</dt><dd>対象商品のバーコードを集めて郵送で応募（バーコード1枚＝1ポイント）</dd>
+    </dl>
+    <p>詳しい応募要項は <a href="https://www.kirin.co.jp/campaign/beverage/viva/" target="_blank" rel="noopener">公式キャンペーンページ</a> で確認してください。</p>
+  </section>
 
   <footer>
     非公式の確認ツールです。対象かどうかの最終判断は
