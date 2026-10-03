@@ -503,21 +503,30 @@ $('startBtn').addEventListener('click', async () => {
     const Z = engine();
     setStatus('カメラを起動しています…');
     Z.prepareZXingModule({ fireImmediately: true }).catch(() => {});
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
-    });
+    const baseVideo = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+    stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...baseVideo, facingMode: { ideal: 'environment' } } });
+
+    // Android の Chrome は、レンズが複数ある機種で望遠レンズを選ぶことがある。
+    // 「camera2 0, facing back」のような名前が付くので、背面で番号が最も小さいメインカメラに切り替える。
+    const mainId = await pickMainBackCamera(stream.getVideoTracks()[0]);
+    if (mainId) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...baseVideo, deviceId: { exact: mainId } } });
+    }
+
     const video = $('video');
     video.srcObject = stream;
     video.hidden = false; $('guide').hidden = false; $('idle').hidden = true; $('stopBtn').hidden = false;
     await video.play();
 
-    // 連続オートフォーカスに対応していれば有効にする
+    // 倍率は等倍に戻し、連続オートフォーカスに対応していれば有効にする
     const track = stream.getVideoTracks()[0];
     const caps = track.getCapabilities ? track.getCapabilities() : {};
     const adv = {};
+    if (caps.zoom) adv.zoom = caps.zoom.min > 1 ? caps.zoom.min : 1;
     if (caps.focusMode && caps.focusMode.includes('continuous')) adv.focusMode = 'continuous';
-    if (Object.keys(adv).length) track.applyConstraints({ advanced: [adv] }).catch(() => {});
+    if (Object.keys(adv).length) await track.applyConstraints({ advanced: [adv] }).catch(() => {});
+    diag.cam = `${track.label || '?'}${caps.zoom ? `  zoom ${track.getSettings().zoom ?? '?'}` : ''}`;
 
     const s = track.getSettings ? track.getSettings() : {};
     setStatus('読み取り中… バーコードを赤い線に合わせ、15〜25cmほど離してください');
@@ -534,7 +543,7 @@ $('startBtn').addEventListener('click', async () => {
   }
 });
 
-const diag = { frames: 0, found: 0, last: '-', video: '-', crop: '-', settings: '-' };
+const diag = { frames: 0, found: 0, last: '-', video: '-', crop: '-', settings: '-', cam: '-' };
 let diagT0 = performance.now(), diagF0 = 0;
 setInterval(() => {
   if (!scanning) return;
@@ -546,10 +555,25 @@ setInterval(() => {
 ` +
     `映像 ${diag.video}（設定 ${diag.settings}）  解析範囲 ${diag.crop}
 ` +
-    `最後の検出: ${diag.last}`;
+    `カメラ ${diag.cam}
+最後の検出: ${diag.last}`;
   const d = $('diagCv'); d.width = cv.width; d.height = cv.height;
   if (cv.width) d.getContext('2d').drawImage(cv, 0, 0);
 }, 700);
+
+async function pickMainBackCamera(currentTrack) {
+  try {
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+    const backs = devs
+      .map(d => ({ d, m: /camera2 (\d+), facing back/i.exec(d.label) }))
+      .filter(x => x.m)
+      .sort((a, b) => Number(a.m[1]) - Number(b.m[1]));
+    if (!backs.length) return null;
+    const main = backs[0].d;
+    const cur = currentTrack.getSettings().deviceId;
+    return main.deviceId && main.deviceId !== cur ? main.deviceId : null;
+  } catch { return null; }
+}
 
 async function scanLoop() {
   const video = $('video');
