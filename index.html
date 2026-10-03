@@ -2,6 +2,14 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-HEGX2W5ZMM"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-HEGX2W5ZMM');
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="ビバ対象チェック">
@@ -222,7 +230,7 @@ footer a { color: var(--accent); }
   </section>
 
   <footer>
-    非公式の確認ツールです。対象かどうかの最終判断は
+    非公式の確認ツールです。利用状況の把握のため Google アナリティクスを使っています（Cookie を使用し、個人を特定する情報は集めません）。対象かどうかの最終判断は
     <a href="https://www.kirin.co.jp/campaign/beverage/viva/barcode/" target="_blank" rel="noopener">公式の対象商品ページ</a>
     で確認してください。一覧は <span id="updated"></span> 時点のものです。
   </footer>
@@ -396,6 +404,9 @@ $('listSummary').textContent = `対象商品の一覧（${Object.keys(ITEMS).len
 // 全角英数を半角に（表示用）
 const half = s => s.replace(/[Ａ-Ｚａ-ｚ０-９．％＆]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
 
+// ---- アクセス解析（Google Analytics）----
+function track(event, params) { try { window.gtag && gtag('event', event, params || {}); } catch {} }
+
 // ---- 判定 ----
 function normalize(raw) {
   let d = String(raw).replace(/\D/g, '');
@@ -454,6 +465,7 @@ function judge(raw, source) {
   }
   if (navigator.vibrate) navigator.vibrate(name ? 60 : [40, 60, 40]);
 
+  track('scan_result', { result: name ? 'target' : (checkDigitOk(code) ? 'not_target' : 'invalid'), barcode: code, product: name ? half(name) : '', method: source });
   history.unshift({ code, ok: !!name, label: name ? half(name) : label });
   history.length = Math.min(history.length, 12);
   renderHistory();
@@ -548,6 +560,7 @@ $('startBtn').addEventListener('click', async () => {
     diag.settings = `${s.width}×${s.height}`;
     $('diagBox').hidden = !DEBUG;
     scanning = true;
+    track('camera_start');
     scanLoop();
   } catch (e) {
     stopCamera();
@@ -637,6 +650,7 @@ $('photo').addEventListener('change', async e => {
   showErr('');
   try {
     setStatus('写真を解析しています…');
+    track('photo_scan');
     const res = await engine().readBarcodes(file, { ...READ_OPTS, tryRotate: true, tryDownscale: true });
     setStatus('');
     const hit = res.find(r => r.isValid && r.text);
