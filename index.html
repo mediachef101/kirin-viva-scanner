@@ -148,6 +148,10 @@ details input[type=search] {
 .err { color: var(--warn); font-size: 13px; margin: 0; }
 .lead { flex-basis: 100%; margin: 0; font-size: 13px; color: var(--muted); }
 .lead strong { color: var(--ink); }
+.deadline { flex-basis: 100%; margin: 0; font-size: 14px; font-weight: 700; color: var(--accent); }
+.deadline.soon { color: var(--ng); }
+.deadline.ended { color: var(--muted); }
+.deadline .num { font-family: var(--font-mono); font-size: 18px; }
 .about { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; font-size: 13px; }
 .about dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 8px; }
 .about dt { color: var(--muted); font-weight: 700; white-space: nowrap; }
@@ -165,6 +169,7 @@ footer a { color: var(--accent); }
     <h1>ビバ！対象チェッカー</h1>
     <span class="meta" id="meta"></span>
     <p class="lead">キリンビバレッジ「<strong>ビバ！ドリームキャンペーン</strong>」の対象商品かどうかを、バーコードで調べられます。</p>
+    <p class="deadline" id="deadline">応募締切：2026年10月13日（火）当日消印有効</p>
   </header>
 
   <div class="ad-space">
@@ -403,6 +408,24 @@ $('listSummary').textContent = `対象商品の一覧（${Object.keys(ITEMS).len
 
 // 全角英数を半角に（表示用）
 const half = s => s.replace(/[Ａ-Ｚａ-ｚ０-９．％＆]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
+
+// ---- 締切表示（日本時間で日付を数える）----
+(function () {
+  const DEADLINE = '2026-10-13';  // 当日消印有効
+  const todayJst = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  const days = Math.round((Date.parse(DEADLINE) - Date.parse(todayJst)) / 86400e3);
+  const el = $('deadline');
+  if (days > 0) {
+    el.innerHTML = `締め切りまで あと <span class="num">${days}</span> 日（10月13日（火）当日消印有効）`;
+    if (days <= 3) el.classList.add('soon');
+  } else if (days === 0) {
+    el.textContent = '本日 10月13日（火）締切です（当日消印有効）';
+    el.classList.add('soon');
+  } else {
+    el.textContent = 'このキャンペーンの応募受付は終了しました（10月13日 当日消印有効）';
+    el.classList.add('ended');
+  }
+})();
 
 // ---- アクセス解析（Google Analytics）----
 function track(event, params) { try { window.gtag && gtag('event', event, params || {}); } catch {} }
